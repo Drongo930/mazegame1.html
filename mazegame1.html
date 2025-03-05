@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Random Maze Generator</title>
+  <style>
+    /* Style the canvas and buttons */
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+    }
+    canvas {
+      background: #fff;
+      border: 2px solid #000;
+      margin-top: 20px;
+    }
+    button, select {
+      padding: 8px 12px;
+      margin: 5px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Random Maze Generator</h1>
+  <!-- Dropdown for difficulty: Easy (10x10), Medium (20x20), Hard (30x30) -->
+  <select id="difficulty">
+    <option value="easy">Easy</option>
+    <option value="medium">Medium</option>
+    <option value="hard">Hard</option>
+  </select>
+  <!-- Button to generate a new maze -->
+  <button id="generate">Generate Maze</button>
+  <!-- Button to show the correct route -->
+  <button id="showRoute">Show Route Hack</button>
+  <br>
+  <!-- Canvas to draw the maze -->
+  <canvas id="mazeCanvas" width="600" height="600"></canvas>
+
+  <script>
+    // Get the canvas and its drawing context.
+    const canvas = document.getElementById("mazeCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Global variables for maze dimensions and grid.
+    let rows, cols, cellSize;
+    let grid = [];
+    let startCell, finishCell;
+    let doorCols = []; // holds the column indexes of the 4 top doors
+
+    // Set grid size based on the selected difficulty.
+    function setDifficulty() {
+      const diff = document.getElementById("difficulty").value;
+      if (diff === "easy") { rows = 10; cols = 10; }
+      else if (diff === "medium") { rows = 20; cols = 20; }
+      else if (diff === "hard") { rows = 30; cols = 30; }
+      cellSize = canvas.width / cols;  // calculate cell size so the grid fits the canvas
+    }
+
+    // Create the grid: each cell starts with all walls (top, right, bottom, left).
+    function createGrid() {
+      grid = [];
+      for (let r = 0; r < rows; r++) {
+        const row = [];
+        for (let c = 0; c < cols; c++) {
+          row.push({
+            row: r,
+            col: c,
+            walls: { top: true, right: true, bottom: true, left: true },
+            visited: false
+          });
+        }
+        grid.push(row);
+      }
+    }
+
+    // Get all neighbor cells that have not been visited.
+    function getUnvisitedNeighbors(cell) {
+      const neighbors = [];
+      const { row, col } = cell;
+      if (row > 0 && !grid[row - 1][col].visited) neighbors.push(grid[row - 1][col]);       // top neighbor
+      if (col < cols - 1 && !grid[row][col + 1].visited) neighbors.push(grid[row][col + 1]);  // right neighbor
+      if (row < rows - 1 && !grid[row + 1][col].visited) neighbors.push(grid[row + 1][col]);  // bottom neighbor
+      if (col > 0 && !grid[row][col - 1].visited) neighbors.push(grid[row][col - 1]);         // left neighbor
+      return neighbors;
+    }
+
+    // Remove walls between two adjacent cells.
+    function removeWalls(current, neighbor) {
+      const x = current.col - neighbor.col;
+      const y = current.row - neighbor.row;
+      if (x === 1) { // neighbor is to the left
+        current.walls.left = false;
+        neighbor.walls.right = false;
+      } else if (x === -1) { // neighbor is to the right
+        current.walls.right = false;
+        neighbor.walls.left = false;
+      }
+      if (y === 1) { // neighbor is above
+        current.walls.top = false;
+        neighbor.walls.bottom = false;
+      } else if (y === -1) { // neighbor is below
+        current.walls.bottom = false;
+        neighbor.walls.top = false;
+      }
+    }
+
+    // Recursive backtracking algorithm to generate the maze.
+    function generateMazeFrom(cell) {
+      cell.visited = true;
+      const neighbors = getUnvisitedNeighbors(cell);
+      shuffle(neighbors);
+      neighbors.forEach(neighbor => {
+        if (!neighbor.visited) {
+          removeWalls(cell, neighbor);
+          generateMazeFrom(neighbor);
+        }
+      });
+    }
+
+    // Shuffle an array (Fisher–Yates algorithm).
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    // Draw the maze on the canvas.
+    function drawMaze() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cell = grid[r][c];
+          const x = c * cellSize;
+          const y = r * cellSize;
+          ctx.strokeStyle = "black";
+          ctx.lineWidth = 2;
+          // Draw top wall.
+          if (cell.walls.top) {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + cellSize, y);
+            ctx.stroke();
+          }
+          // Draw right wall.
+          if (cell.walls.right) {
+            ctx.beginPath();
+            ctx.moveTo(x + cellSize, y);
+            ctx.lineTo(x + cellSize, y + cellSize);
+            ctx.stroke();
+          }
+          // Draw bottom wall.
+          if (cell.walls.bottom) {
+            ctx.beginPath();
+            ctx.moveTo(x + cellSize, y + cellSize);
+            ctx.lineTo(x, y + cellSize);
+            ctx.stroke();
+          }
+          // Draw left wall.
+          if (cell.walls.left) {
+            ctx.beginPath();
+            ctx.moveTo(x, y + cellSize);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+          }
+          // Mark top doors:
+          // If the cell is in the top row and its column is one of the door positions.
+          if (r === 0 && doorCols.includes(c)) {
+            // If this cell is the real entrance, color it green; otherwise, red.
+            ctx.fillStyle = (cell === startCell) ? "green" : "red";
+            // Draw a door marker on the top edge.
+            ctx.fillRect(x + cellSize / 4, y, cellSize / 2, cellSize / 4);
+          }
+          // Mark finish door:
+          // If the cell is in the bottom row and is the finish door.
+          if (r === rows - 1 && cell === finishCell) {
+            ctx.fillStyle = "blue";
+            // Draw a finish door marker on the bottom edge.
+            ctx.fillRect(x + cellSize / 4, y + cellSize * 0.75, cellSize / 2, cellSize / 4);
+          }
+        }
+      }
+    }
+
+    // Return neighbors that can be reached (i.e. where there is no wall between cells).
+    function getAccessibleNeighbors(cell) {
+      const neighbors = [];
+      const { row, col } = cell;
+      if (!cell.walls.top && row > 0) neighbors.push(grid[row - 1][col]);
+      if (!cell.walls.right && col < cols - 1) neighbors.push(grid[row][col + 1]);
+      if (!cell.walls.bottom && row < rows - 1) neighbors.push(grid[row + 1][col]);
+      if (!cell.walls.left && col > 0) neighbors.push(grid[row][col - 1]);
+      return neighbors;
+    }
+
+    // Solve the maze using Breadth-First Search (BFS) from the real start door to the finish door.
+    function solveMaze() {
+      const queue = [];
+      const cameFrom = new Map();
+      queue.push(startCell);
+      cameFrom.set(startCell, null);
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (current === finishCell) break;
+        const neighbors = getAccessibleNeighbors(current);
+        neighbors.forEach(neighbor => {
+          if (!cameFrom.has(neighbor)) {
+            cameFrom.set(neighbor, current);
+            queue.push(neighbor);
+          }
+        });
+      }
+      // Reconstruct the path from finish to start.
+      const path = [];
+      let current = finishCell;
+      while (current) {
+        path.push(current);
+        current = cameFrom.get(current);
+      }
+      return path.reverse();
+    }
+
+    // Draw the solution path on the maze.
+    function drawPath(path) {
+      ctx.strokeStyle = "orange";
+      ctx.lineWidth = cellSize / 4;
+      ctx.beginPath();
+      path.forEach((cell, i) => {
+        const x = cell.col * cellSize + cellSize / 2;
+        const y = cell.row * cellSize + cellSize / 2;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    // Main function to generate a new maze.
+    function generateMaze() {
+      setDifficulty();
+      createGrid();
+      
+      // Choose four random columns in the top row to be door positions.
+      doorCols = [];
+      while (doorCols.length < 4) {
+        const colDoor = Math.floor(Math.random() * cols);
+        if (!doorCols.includes(colDoor)) doorCols.push(colDoor);
+      }
+      
+      // Randomly select one of these doors as the real entrance.
+      const startDoorIndex = Math.floor(Math.random() * 4);
+      const startDoorCol = doorCols[startDoorIndex];
+      startCell = grid[0][startDoorCol];
+      // Remove the top wall so the player can enter.
+      startCell.walls.top = false;
+      
+      // Randomly choose one column in the bottom row to be the finish door.
+      const finishDoorCol = Math.floor(Math.random() * cols);
+      finishCell = grid[rows - 1][finishDoorCol];
+      // Remove the bottom wall so that it becomes the exit.
+      finishCell.walls.bottom = false;
+      
+      // Generate the maze starting from the real entrance.
+      generateMazeFrom(startCell);
+      drawMaze();
+    }
+
+    // Event listener: Generate a new maze when the button is clicked.
+    document.getElementById("generate").addEventListener("click", generateMaze);
+
+    // Event listener: Show the solution route when the button is clicked.
+    document.getElementById("showRoute").addEventListener("click", function() {
+      const path = solveMaze();
+      drawPath(path);
+    });
+  </script>
+</body>
+</html>
